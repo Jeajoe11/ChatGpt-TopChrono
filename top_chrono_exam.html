@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Top Chrono — Examen Solfège</title>
+<link rel="shortcut icon" href="https://png.pngtree.com/png-clipart/20230810/original/pngtree-flat-style-vector-illustration-of-black-eighth-note-icon-vector-picture-image_10248366.png" type="image/x-icon">
+<style>
+  :root{
+    --bg:#0b0f12; --panel:#0f1720; --line:#2b3440; --note:#f8fafc; --muted:#8b98a6; --accent:#7ee787;
+    --ok:#2ecc71; --bad:#ef4444;
+  }
+  body.light{
+    --bg:#f7fafb; --panel:#ffffff; --line:#dfe7ed; --note:#0b0f12; --muted:#5a6772; --accent:#0ea5a0;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--note);font-family:Inter, Roboto, "Helvetica Neue", Arial;}
+  .app{max-width:1100px;margin:18px auto;padding:16px;background:linear-gradient(180deg,var(--panel) 0%, rgba(0,0,0,0.02) 100%);border-radius:12px;box-shadow:0 6px 30px rgba(0,0,0,0.45);}
+  header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  h1{font-size:18px;margin:0;color:var(--accent)}
+  .controls{display:flex;gap:8px;align-items:center}
+  button{background:var(--panel);border:1px solid var(--line);color:var(--note);padding:8px 12px;border-radius:8px;cursor:pointer}
+  button.primary{background:linear-gradient(90deg,#0ea5a0,#38bdf8);color:#031019;border:none}
+  .small{font-size:13px;padding:6px 8px}
+  .viewer{display:flex;flex-direction:column;gap:12px;align-items:center}
+  .pageWrap{width:100%;display:flex;flex-direction:column;align-items:center;gap:12px}
+  .page{width:980px;background:var(--panel);border-radius:8px;padding:14px;box-sizing:border-box;box-shadow:0 6px 18px rgba(0,0,0,0.35)}
+  .pageHeader{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .staves{display:flex;flex-direction:column;gap:12px}
+  .staffRow{display:flex;align-items:center;gap:12px}
+  .clefImg{width:48px;height:auto;display:block}
+  .svgBox{background:transparent}
+  .inputsRow{display:flex;gap:12px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .noteInput{width:56px;padding:6px 8px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--note);text-align:center;font-weight:600}
+  .noteLabel{font-size:12px;color:var(--muted);text-align:center;margin-top:4px}
+  .meta{color:var(--muted);font-size:13px}
+  .nav{display:flex;gap:8px;align-items:center}
+  .timer{font-weight:700;color:var(--accent)}
+  .resultAnswer{font-size:12px;color:var(--muted);margin-top:4px}
+  .correct{background:linear-gradient(90deg, rgba(46,204,113,0.12), rgba(46,204,113,0.06));border-color:rgba(46,204,113,0.9)}
+  .wrong{background:linear-gradient(90deg, rgba(239,68,68,0.08), rgba(239,68,68,0.04));border-color:rgba(239,68,68,0.9)}
+  .hidden{display:none}
+  .center{display:flex;justify-content:center;align-items:center}
+  @media(max-width:1100px){.page{width:100%}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Top Chrono — Examen (5 portées / page • 5 minutes)</h1>
+      <div class="meta">10 pages • 4 clé de sol • 4 clé de fa • 2 mixtes — ronde, lignes & interlignes</div>
+    </div>
+    <div class="controls">
+      <button id="toggleTheme" class="small">☀️ Mode clair</button>
+      <div style="width:8px"></div>
+      <div class="nav">
+        <button id="prev" class="small">◀ Préc</button>
+        <div id="pageIndicator" class="meta">Page 1 / 10</div>
+        <button id="next" class="small">Suiv ▶</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="viewer">
+    <div id="pageContainer" class="pageWrap"></div>
+    <div style="height:8px"></div>
+    <div class="meta center">Astuce : clique sur <strong>GO</strong> pour démarrer la page — la partition est masquée avant le départ. Remplis toutes les cases. La correction s'affiche automatiquement quand le chrono (5:00) arrive à zéro ou quand toutes les cases sont complétées.</div>
+  </div>
+</div>
+
+<script>
+/* =========== Configuration =========== */
+const PAGES = 10;
+const STAVES_PER_PAGE = 5;
+const NOTES_PER_STAFF = 8; // notes par portée
+const TIME_MINUTES = 5; // 5 minutes
+
+// Clefs images (user-provided)
+const CLEF_TREBLE_URL = "https://cdn.pixabay.com/photo/2016/03/26/01/17/treble-clef-1279909_960_720.png";
+const CLEF_BASS_URL   = "https://images.freeimages.com/vhq/images/previews/125/bass-clef-38755.png";
+
+// Positions for lines & spaces (offset integers relative to middle line)
+const POS_TREBLE = [
+  {name:"mi", offset:-4},{name:"fa", offset:-3},{name:"sol", offset:-2},
+  {name:"la", offset:-1},{name:"si", offset:0},{name:"do", offset:1},
+  {name:"ré", offset:2},{name:"mi", offset:3},{name:"fa", offset:4}
+];
+const POS_BASS = [
+  {name:"sol", offset:-4},{name:"la", offset:-3},{name:"si", offset:-2},
+  {name:"do", offset:-1},{name:"ré", offset:0},{name:"mi", offset:1},
+  {name:"fa", offset:2},{name:"sol", offset:3},{name:"la", offset:4}
+];
+
+// Utility: sample without replacement
+function randSample(arr, n){
+  const copy = arr.slice();
+  const out = [];
+  for(let i=0;i<n;i++){
+    if(copy.length===0) break;
+    const idx = Math.floor(Math.random()*copy.length);
+    out.push(copy.splice(idx,1)[0]);
+  }
+  return out;
+}
+
+/* =========== Génération des exercices =========== */
+/*
+ Structure:
+ pages = [
+   {
+     started: false,
+     timeLeft: seconds,
+     timerId: null,
+     staves: [
+       { clef: "treble"|"bass", notes: [ {name, offset}, ... ] , answers: [null,...] }
+     ]
+   }
+ ]
+*/
+const pages = [];
+
+function createPages(){
+  for(let p=0;p<PAGES;p++){
+    const page = { started:false, timeLeft: TIME_MINUTES*60, timerId:null, completed:false, staves:[] };
+    // Determine page clef pattern:
+    // pages 0-3: treble, 4-7: bass, 8-9: mixed (alternate clefs per staff)
+    for(let s=0;s<STAVES_PER_PAGE;s++){
+      let clef;
+      if(p < 4) clef = "treble";
+      else if(p < 8) clef = "bass";
+      else clef = (s % 2 === 0) ? "treble" : "bass";
+      const pool = (clef === "treble") ? POS_TREBLE : POS_BASS;
+      const notes = randSample(pool, NOTES_PER_STAFF).map(n => ({ name: n.name, offset: n.offset }));
+      const answers = Array(NOTES_PER_STAFF).fill("");
+      page.staves.push({clef, notes, answers});
+    }
+    pages.push(page);
+  }
+}
+
+/* =========== Rendu (HTML + SVG) =========== */
+const pageContainer = document.getElementById("pageContainer");
+
+function renderAllPages(){
+  pageContainer.innerHTML = "";
+  for(let i=0;i<PAGES;i++){
+    const node = renderSinglePage(i);
+    pageContainer.appendChild(node);
+  }
+  updatePageVisibility(0);
+}
+
+function renderSinglePage(pageIndex){
+  const pageData = pages[pageIndex];
+  const wrapper = document.createElement("div");
+  wrapper.className = "page";
+  wrapper.setAttribute("data-page", pageIndex);
+
+  // Header: title, GO button, timer, Corriger button (Corriger manual not necessary because correction automatic, but include "Corriger maintenant" to force)
+  const header = document.createElement("div");
+  header.className = "pageHeader";
+  header.innerHTML = `
+    <div>
+      <strong>Page ${pageIndex+1}</strong>
+      <div class="meta">5 portées — ${ (pageIndex < 4) ? 'Clé de sol' : (pageIndex < 8) ? 'Clé de fa' : 'Mixte' }</div>
+    </div>
+  `;
+  const controls = document.createElement("div");
+  controls.style.display = "flex"; controls.style.gap = "8px"; controls.style.alignItems = "center";
+
+  const goBtn = document.createElement("button");
+  goBtn.textContent = "▶ GO / Commencer";
+  goBtn.className = "small";
+  goBtn.onclick = ()=> startPage(pageIndex);
+
+  const timerSpan = document.createElement("div");
+  timerSpan.className = "timer meta";
+  timerSpan.style.minWidth = "74px";
+  timerSpan.textContent = formatTime(pageData.timeLeft);
+
+  const forceCheckBtn = document.createElement("button");
+  forceCheckBtn.textContent = "Corriger maintenant";
+  forceCheckBtn.className = "small";
+  forceCheckBtn.onclick = ()=> finishPageAndCheck(pageIndex);
+
+  controls.appendChild(goBtn);
+  controls.appendChild(timerSpan);
+  controls.appendChild(forceCheckBtn);
+  header.appendChild(controls);
+  wrapper.appendChild(header);
+
+  // Hidden area: the actual staves + inputs. Hidden until GO.
+  const hiddenArea = document.createElement("div");
+  hiddenArea.className = "hidden";
+  hiddenArea.style.display = pageData.started ? "block" : "none";
+  hiddenArea.setAttribute("data-hidden-area", "true");
+
+  // For each staff: draw SVG staff with clef image and note heads, then inputs row
+  const stavesDiv = document.createElement("div");
+  stavesDiv.className = "staves";
+
+  pageData.staves.forEach((staff, sIdx) => {
+    const staffRow = document.createElement("div");
+    staffRow.className = "staffRow";
+
+    // Clef image
+    const clefImg = document.createElement("img");
+    clefImg.className = "clefImg";
+    clefImg.src = (staff.clef === "treble") ? CLEF_TREBLE_URL : CLEF_BASS_URL;
+    clefImg.alt = staff.clef === "treble" ? "Clé de sol" : "Clé de fa";
+
+    // SVG staff
+    const svg = createStaffSVG(staff, pageIndex, sIdx);
+    svg.classList.add("svgBox");
+
+    staffRow.appendChild(clefImg);
+    staffRow.appendChild(svg);
+
+    // Inputs container (one row per staff)
+    const inputsRow = document.createElement("div");
+    inputsRow.className = "inputsRow";
+    inputsRow.style.marginLeft = "64px"; // align under the staff
+    inputsRow.setAttribute("data-inputs-for", `${pageIndex}-${sIdx}`);
+
+    for(let n=0;n<staff.notes.length;n++){
+      const inputWrap = document.createElement("div");
+      inputWrap.style.display = "flex";
+      inputWrap.style.flexDirection = "column";
+      inputWrap.style.alignItems = "center";
+      inputWrap.style.width = "56px";
+
+      const inp = document.createElement("input");
+      inp.className = "noteInput";
+      inp.setAttribute("data-page", pageIndex);
+      inp.setAttribute("data-staff", sIdx);
+      inp.setAttribute("data-note", n);
+      inp.setAttribute("placeholder", "");
+      inp.autocomplete = "off";
+      inp.oninput = ()=> onInputChange(pageIndex);
+
+      const hint = document.createElement("div");
+      hint.className = "noteLabel";
+      hint.textContent = ""; // will show result after checking
+
+      inputWrap.appendChild(inp);
+      inputWrap.appendChild(hint);
+      inputsRow.appendChild(inputWrap);
+    }
+
+    const staffBlock = document.createElement("div");
+    staffBlock.style.display = "flex";
+    staffBlock.style.flexDirection = "column";
+    staffBlock.style.flex = "1";
+    staffBlock.appendChild(staffRow);
+    staffBlock.appendChild(inputsRow);
+
+    stavesDiv.appendChild(staffBlock);
+  });
+
+  hiddenArea.appendChild(stavesDiv);
+  wrapper.appendChild(hiddenArea);
+
+  // Save references on the wrapper for later operations
+  wrapper._timerSpan = timerSpan;
+  wrapper._goBtn = goBtn;
+  wrapper._hiddenArea = hiddenArea;
+
+  return wrapper;
+}
+
+// Create staff SVG with note heads (rondes). We draw 5 lines and rotate rounded ellipse for note heads.
+function createStaffSVG(staff, pageIndex, staffIndex){
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const width = 820;
+  const height = 120;
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  // background transparent
+  const x0 = 24;
+  const y0 = 18;
+  const lineSpacing = 14;
+  // Draw 5 lines
+  for(let i=0;i<5;i++){
+    const y = y0 + i*lineSpacing;
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", x0);
+    line.setAttribute("x2", width - 20);
+    line.setAttribute("y1", y);
+    line.setAttribute("y2", y);
+    line.setAttribute("stroke", "var(--line)");
+    line.setAttribute("stroke-width", "1.6");
+    svg.appendChild(line);
+  }
+
+  // Draw notes spaced evenly
+  const n = staff.notes.length;
+  const startX = x0 + 36;
+  const stepX = (width - startX - 72) / Math.max(n-1,1);
+  const yMiddle = y0 + 2*lineSpacing;
+  for(let i=0;i<n;i++){
+    const note = staff.notes[i];
+    const cx = startX + i*stepX;
+    const cy = yMiddle - note.offset * (lineSpacing/2);
+
+    const ellipse = document.createElementNS(SVG_NS, "ellipse");
+    ellipse.setAttribute("cx", cx);
+    ellipse.setAttribute("cy", cy);
+    ellipse.setAttribute("rx", 9);
+    ellipse.setAttribute("ry", 6);
+    ellipse.setAttribute("fill", "none");
+    ellipse.setAttribute("stroke", "var(--note)");
+    ellipse.setAttribute("stroke-width", "1.6");
+    ellipse.setAttribute("transform", `rotate(-24 ${cx} ${cy})`);
+    svg.appendChild(ellipse);
+  }
+
+  return svg;
+}
+
+/* =========== Interactions & Timer =========== */
+
+let currentPageIndex = 0;
+function updatePageVisibility(activeIndex){
+  const pagesEls = document.querySelectorAll(".page");
+  pagesEls.forEach((el, idx) => {
+    el.style.display = (idx === activeIndex) ? "block" : "none";
+  });
+  currentPageIndex = activeIndex;
+  document.getElementById("pageIndicator").textContent = `Page ${activeIndex+1} / ${PAGES}`;
+}
+document.getElementById("prev").onclick = ()=>{
+  if(currentPageIndex > 0) updatePageVisibility(currentPageIndex - 1);
+};
+document.getElementById("next").onclick = ()=>{
+  if(currentPageIndex < PAGES - 1) updatePageVisibility(currentPageIndex + 1);
+};
+
+// Start page: reveal content and start timer if not started
+function startPage(pageIndex){
+  const pageData = pages[pageIndex];
+  if(pageData.started) return; // already started
+  pageData.started = true;
+  pageData.timeLeft = TIME_MINUTES * 60;
+  // reveal hidden area
+  const pageEl = document.querySelector(`.page[data-page="${pageIndex}"]`);
+  if(pageEl){
+    pageEl.querySelector('[data-hidden-area="true"]').style.display = "block";
+  }
+  startTimerForPage(pageIndex);
+}
+
+// Timer loop
+function startTimerForPage(pageIndex){
+  const pageData = pages[pageIndex];
+  if(pageData.timerId) return;
+  const pageEl = document.querySelector(`.page[data-page="${pageIndex}"]`);
+  const timerSpan = pageEl ? pageEl._timerSpan : null;
+  pageData.timerId = setInterval(()=>{
+    pageData.timeLeft--;
+    if(timerSpan) timerSpan.textContent = formatTime(pageData.timeLeft);
+    if(pageData.timeLeft <= 0){
+      clearInterval(pageData.timerId);
+      pageData.timerId = null;
+      pageData.timeLeft = 0;
+      // trigger correction
+      checkAndFinishPage(pageIndex);
+    }
+  }, 1000);
+}
+
+// Called on every input change to detect if all inputs filled
+function onInputChange(pageIndex){
+  const pageEl = document.querySelector(`.page[data-page="${pageIndex}"]`);
+  const inputs = pageEl.querySelectorAll('input.noteInput');
+  let allFilled = true;
+  inputs.forEach(inp => {
+    if(inp.style.display === "none") return; // skip hidden (shouldn't happen)
+    if(inp.value.trim() === "") allFilled = false;
+  });
+  if(allFilled){
+    // Stop timer and correct
+    finishPageAndCheck(pageIndex);
+  }
+}
+
+// Format seconds -> MM:SS
+function formatTime(sec){
+  const m = Math.floor(sec/60); const s = sec%60;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+/* =========== Correction logic =========== */
+
+// Called when time's up OR all inputs filled OR user forced correction
+function finishPageAndCheck(pageIndex){
+  const pageData = pages[pageIndex];
+  if(pageData.completed) return;
+  // stop timer
+  if(pageData.timerId){ clearInterval(pageData.timerId); pageData.timerId = null; }
+  pageData.completed = true;
+
+  // Gather user answers and check
+  const pageEl = document.querySelector(`.page[data-page="${pageIndex}"]`);
+  const inputEls = pageEl.querySelectorAll('input.noteInput');
+
+  // iterate inputs and mark
+  inputEls.forEach(inp => {
+    const p = parseInt(inp.getAttribute('data-page'));
+    const s = parseInt(inp.getAttribute('data-staff'));
+    const n = parseInt(inp.getAttribute('data-note'));
+    const user = inp.value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // strip accents
+    const correctName = pages[p].staves[s].notes[n].name.toLowerCase();
+    // Normalize correctName similarly (our names have no accents)
+    const isCorrect = (user === correctName);
+    // style input
+    if(isCorrect){
+      inp.classList.add("correct");
+      inp.classList.remove("wrong");
+    } else {
+      inp.classList.add("wrong");
+      inp.classList.remove("correct");
+    }
+    // show correct label under the input if wrong
+    const labelDiv = inp.nextElementSibling;
+    if(isCorrect){
+      labelDiv.textContent = "✔︎";
+      labelDiv.style.color = "var(--ok)";
+    } else {
+      labelDiv.innerHTML = `✖︎ — <span style="color:var(--muted)">${correctName}</span>`;
+      labelDiv.style.color = "var(--bad)";
+    }
+    // disable input to prevent changes after correction
+    inp.disabled = true;
+  });
+
+  // Update timer display to 00:00
+  const timerSpan = pageEl._timerSpan;
+  if(timerSpan) timerSpan.textContent = "00:00";
+}
+
+// Shortcut: call check (same as finishPageAndCheck)
+function checkAndFinishPage(pageIndex){
+  finishPageAndCheck(pageIndex);
+}
+
+/* =========== Helper: Force "Corriger maintenant" =========== */
+function finishPageAndCheck(pageIndex){
+  const pageData = pages[pageIndex];
+  if(pageData.timerId){ clearInterval(pageData.timerId); pageData.timerId = null; }
+  if(pageData.completed) return;
+  // Mark as completed and run check
+  pageData.completed = true;
+  // For each input, evaluate
+  const pageEl = document.querySelector(`.page[data-page="${pageIndex}"]`);
+  const inputEls = pageEl.querySelectorAll('input.noteInput');
+  inputEls.forEach(inp=>{
+    const p = parseInt(inp.getAttribute('data-page'));
+    const s = parseInt(inp.getAttribute('data-staff'));
+    const n = parseInt(inp.getAttribute('data-note'));
+    const user = inp.value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const correctName = pages[p].staves[s].notes[n].name.toLowerCase();
+    const isCorrect = (user === correctName);
+    if(isCorrect){
+      inp.classList.add("correct"); inp.classList.remove("wrong");
+      inp.nextElementSibling.textContent = "✔︎"; inp.nextElementSibling.style.color = "var(--ok)";
+    } else {
+      inp.classList.add("wrong"); inp.classList.remove("correct");
+      inp.nextElementSibling.innerHTML = `✖︎ — <span style="color:var(--muted)">${correctName}</span>`;
+      inp.nextElementSibling.style.color = "var(--bad)";
+    }
+    inp.disabled = true;
+  });
+  // Update timer displays to 00:00
+  const pageElRoot = document.querySelector(`.page[data-page="${pageIndex}"]`);
+  if(pageElRoot && pageElRoot._timerSpan) pageElRoot._timerSpan.textContent = "00:00";
+}
+
+/* =========== Theme toggle =========== */
+const themeBtn = document.getElementById("toggleTheme");
+themeBtn.onclick = ()=>{
+  document.body.classList.toggle("light");
+  themeBtn.textContent = document.body.classList.contains("light") ? "🌙 Mode sombre" : "☀️ Mode clair";
+};
+
+/* =========== Init =========== */
+createPages();
+renderAllPages();
+// show only page 0 initially
+updatePageVisibility(0);
+
+</script>
+</body>
+</html>
